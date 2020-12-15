@@ -1,0 +1,74 @@
+# docker-composeのバージョン
+version: "3"
+# services配下に各コンテナの情報を記載する
+services:
+  # ここからはmysqlのコンテナに関する情報収集
+  # "mysql"はサービス名（任意につけておけ）
+  mysql:
+    # コンテナに名前をつけることもできる
+    container_name: mysql
+    # Dokerfileのあるディレクトリのパスを指定する
+    build:
+      context: .
+      dockerfile: ./docker/mysql/Dockerfile
+    # mysqlのホスト名を決める
+    hostname: mysql
+    # 外部に公開するポートを指定する
+    # これがないと外部からアクセスできない
+    # MySQLサーバーをデフォルト設定でインストールした場合に、接続のTCPポートは、3306になる
+    ports:
+      - 3306:3306
+    # mysqlの設定
+    environment:
+      MYSQL_DATABASE: event_chat_db
+      MYSQL_USER: root
+      MYSQL_ROOT_PASSWORD: 1101
+    # docker-compose run実行時に実行される
+    # オプションは日本語の文字化けに対応
+    command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci --innodb-buffer-pool-size=64M
+    # パスをボリュームとしてマウント
+    # ：の左側がホストディレクトリ、：の右側がコンテナ上のディレクトリ
+    volumes:
+      - ./docker/mysql/db:/var/lib/mysql
+      #  初期設定を読み込む
+      - ./docker/mysql/my.cnf:/etc/mysql/my.cnf
+      #  MySql起動時にDBを作成する
+      - ./docker/mysql/db:/docker-entrypoint-initdb.d
+      - ./docker/mysql:/var/log/mysql
+  vue:
+    container_name: vue
+    build:
+      context: .
+      dockerfile: ./docker/vue/Dockerfile
+    ports:
+      - 8080:8080
+    volumes:
+      - ./docker/vue:/app
+      - /app/node_modules
+    # 任意のport番号を指定
+    environment:
+      VUE_APP_API_ENDPOINT: http://localhost:8888
+    command: npm run serve
+  # ここからはGollangのアプリケーションに対応する情報
+  golang:
+    # mysqlのコンテナとリンクつけする
+    # mysqlコンテナを起動してからgolangを起動するようにする
+    links:
+      - mysql
+    build:
+      context: .
+      dockerfile: ./docker/golang/Dockerfile
+    container_name: golang
+    ports:
+      - 8888:8888
+    env_file: # 左記オプション追加
+      - ./docker/golang/.env
+    volumes:
+      - .:/go/src/golang
+    # docker-compose run実行時に実行される
+    command: go run main.go
+
+# トップレベルでvolumesを定義すると、各サービスからボリュームを参照できる
+volumes:
+  db-data:
+    driver: local
